@@ -1,59 +1,67 @@
 <!doctype html>
 <html>
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>FID Checker — Mini App</title>
-    <style>
-      :root { color-scheme: dark light }
-      body { margin:0; min-height:100svh; display:grid; place-items:center;
-             background:#0b0b14; color:#e5e7eb; font:16px/1.6 system-ui }
-      .card { width:min(480px, 92vw); background:#111827; border:1px solid #232535;
-              border-radius:16px; padding:20px 22px; }
-      h1 { margin:0 0 8px; font-size:22px }
-      p  { margin:0 0 10px; color:#9aa3b2 }
-      button { padding:10px 14px; border-radius:10px; background:#1f2937; color:#fff;
-               border:1px solid #374151; cursor:pointer }
-      pre { background:#0b0e19; border:1px solid #232535; border-radius:12px; padding:12px;
-            overflow:auto; font-size:13px }
-      .ok { color:#a7f3d0 }
-      .err { color:#fca5a5 }
-    </style>
-  </head>
-  <body>
-    <div class="card">
-      <h1>Connect Farcaster</h1>
-      <p>Klik tombol di bawah untuk “connect”. Setelah izin diberikan, FID kamu akan tampil.</p>
-      <button id="connect">Connect wallet</button>
-      <p id="status" style="margin-top:10px;">Ready</p>
-      <pre id="out" hidden></pre>
-    </div>
+<head>
+  <meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>FID Checker — Mini App</title>
+  <style>
+    :root{color-scheme:dark light}
+    body{margin:0;min-height:100svh;display:grid;place-items:center;background:#0b0b14;color:#e5e7eb;font:16px/1.6 system-ui}
+    .card{background:#111827;border:1px solid #232535;border-radius:16px;padding:20px 22px;width:min(480px,92vw)}
+    button{background:#1f2937;border:1px solid #374151;color:#fff;padding:10px 14px;border-radius:10px;cursor:pointer}
+    pre{background:#0b0e19;border:1px solid #232535;border-radius:12px;padding:12px;overflow:auto;font-size:13px}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h2>Connect Farcaster</h2>
+    <p>Klik “Connect” untuk izin. Setelah itu, FID & username akan tampil.</p>
+    <button id="connect">Connect wallet</button>
+    <p id="status" style="margin-top:10px">Ready</p>
+    <pre id="out" hidden></pre>
+  </div>
 
-    <script type="module">
-      // Mini App SDK dipanggil hanya saat dibuka dari Warpcast Mini App modal.
-      import { sdk } from 'https://unpkg.com/@farcaster/miniapp-sdk?module';
+  <script type="module">
+    import { sdk } from 'https://unpkg.com/@farcaster/miniapp-sdk?module';
+    sdk.actions.ready();
 
-      sdk.actions.ready();
+    const params = new URLSearchParams(location.search);
+    const auto = params.get('autoconnect') === '1';
+    const statusEl = document.getElementById('status');
+    const outEl = document.getElementById('out');
 
-      const statusEl = document.getElementById('status');
-      const outEl = document.getElementById('out');
-      document.getElementById('connect').onclick = async () => {
-        try {
-          statusEl.textContent = 'Requesting permission...';
-          const auth = await sdk.actions.signIn(); // minta izin dari user
-          // auth.user: { fid, username, displayName, pfpUrl, ... }
-          statusEl.innerHTML = 'Connected <span class="ok">✅</span>';
-          outEl.hidden = false;
-          outEl.textContent = JSON.stringify(
-            { fid: auth.user.fid, username: auth.user.username },
-            null, 2
-          );
-        } catch (e) {
-          statusEl.innerHTML = 'Canceled/failed <span class="err">✖</span>';
-          outEl.hidden = false;
-          outEl.textContent = (e && e.message) ? e.message : String(e);
-        }
-      };
-    </script>
-  </body>
+    async function signIn() {
+      try {
+        statusEl.textContent = 'Requesting permission...';
+        const auth = await sdk.actions.signIn();
+        statusEl.textContent = 'Connected ✅';
+        outEl.hidden = false;
+        outEl.textContent = JSON.stringify(
+          { fid: auth.user.fid, username: auth.user.username }, null, 2
+        );
+        localStorage.setItem('fc_user', JSON.stringify(auth.user));
+      } catch (e) {
+        statusEl.textContent = 'Canceled/failed ✖';
+        outEl.hidden = false;
+        outEl.textContent = (e && e.message) ? e.message : String(e);
+      }
+    }
+
+    document.getElementById('connect').onclick = signIn;
+
+    // auto-prompt connect saat dibuka dari Warpcast
+    const isWarpcast = /Warpcast/i.test(navigator.userAgent);
+    if (auto && isWarpcast && document.visibilityState === 'visible') {
+      setTimeout(signIn, 150);
+    }
+
+    // show cached if exists
+    const cached = localStorage.getItem('fc_user');
+    if (cached) {
+      const u = JSON.parse(cached);
+      statusEl.textContent = 'Connected (cached) ✅';
+      outEl.hidden = false;
+      outEl.textContent = JSON.stringify({ fid: u.fid, username: u.username }, null, 2);
+    }
+  </script>
+</body>
 </html>
