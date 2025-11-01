@@ -1,67 +1,107 @@
 <!doctype html>
 <html>
 <head>
-  <meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <title>FID Checker — Mini App</title>
   <style>
     :root{color-scheme:dark light}
     body{margin:0;min-height:100svh;display:grid;place-items:center;background:#0b0b14;color:#e5e7eb;font:16px/1.6 system-ui}
-    .card{background:#111827;border:1px solid #232535;border-radius:16px;padding:20px 22px;width:min(480px,92vw)}
+    .card{background:#111827;border:1px solid #232535;border-radius:16px;padding:20px 22px;width:min(520px,92vw)}
     button{background:#1f2937;border:1px solid #374151;color:#fff;padding:10px 14px;border-radius:10px;cursor:pointer}
-    pre{background:#0b0e19;border:1px solid #232535;border-radius:12px;padding:12px;overflow:auto;font-size:13px}
+    pre{background:#0b0e19;border:1px solid #232535;border-radius:12px;padding:12px;overflow:auto;font-size:13px;max-height:40vh}
+    .ok{color:#a7f3d0}.err{color:#fca5a5}.muted{color:#9aa3b2}
   </style>
 </head>
 <body>
   <div class="card">
     <h2>Connect Farcaster</h2>
-    <p>Klik “Connect” untuk izin. Setelah itu, FID & username akan tampil.</p>
+    <p class="muted">Buka dari tombol <b>Open FID Checker</b> di dalam Warpcast. Kalau dari Chrome, tidak bisa auto connect.</p>
     <button id="connect">Connect wallet</button>
     <p id="status" style="margin-top:10px">Ready</p>
     <pre id="out" hidden></pre>
   </div>
 
   <script type="module">
-    import { sdk } from 'https://unpkg.com/@farcaster/miniapp-sdk?module';
-    sdk.actions.ready();
-
-    const params = new URLSearchParams(location.search);
-    const auto = params.get('autoconnect') === '1';
     const statusEl = document.getElementById('status');
     const outEl = document.getElementById('out');
+    const log = (o) => { outEl.hidden = false; outEl.textContent = (typeof o==='string')?o:JSON.stringify(o,null,2); };
 
-    async function signIn() {
+    // Cek environment
+    const ua = navigator.userAgent || '';
+    const isWarpcastUA = /Warpcast/i.test(ua);
+    const inIframe = window.self !== window.top; // modal mini app adalah iframe/webview
+    const params = new URLSearchParams(location.search);
+    const auto = params.get('autoconnect') === '1';
+
+    // Load SDK (coba beberapa CDN yang dikenal)
+    async function loadSdk() {
       try {
-        statusEl.textContent = 'Requesting permission...';
-        const auth = await sdk.actions.signIn();
-        statusEl.textContent = 'Connected ✅';
-        outEl.hidden = false;
-        outEl.textContent = JSON.stringify(
-          { fid: auth.user.fid, username: auth.user.username }, null, 2
-        );
-        localStorage.setItem('fc_user', JSON.stringify(auth.user));
-      } catch (e) {
-        statusEl.textContent = 'Canceled/failed ✖';
-        outEl.hidden = false;
-        outEl.textContent = (e && e.message) ? e.message : String(e);
+        // official naming (baru)
+        const mod = await import('https://cdn.jsdelivr.net/npm/@farcaster/miniapp@latest/+esm');
+        return mod.sdk || mod.default || mod;
+      } catch(_) {
+        try {
+          // legacy naming (beberapa contoh pakai ini)
+          const mod = await import('https://unpkg.com/@farcaster/miniapp-sdk?module');
+          return mod.sdk || mod.default || mod;
+        } catch(e) {
+          throw new Error('MiniApp SDK gagal dimuat dari CDN');
+        }
       }
     }
 
-    document.getElementById('connect').onclick = signIn;
-
-    // auto-prompt connect saat dibuka dari Warpcast
-    const isWarpcast = /Warpcast/i.test(navigator.userAgent);
-    if (auto && isWarpcast && document.visibilityState === 'visible') {
-      setTimeout(signIn, 150);
+    async function doSignIn(sdk) {
+      try {
+        statusEl.textContent = 'Requesting permission...';
+        if (sdk.actions && sdk.actions.ready) sdk.actions.ready();
+        const auth = await sdk.actions.signIn();
+        statusEl.innerHTML = 'Connected <span class="ok">✅</span>';
+        log({ env: { isWarpcastUA, inIframe }, user: auth.user });
+        localStorage.setItem('fc_user', JSON.stringify(auth.user));
+      } catch (e) {
+        statusEl.innerHTML = 'Canceled/failed <span class="err">✖</span>';
+        log({ error: e?.message || String(e), env: { isWarpcastUA, inIframe } });
+      }
     }
 
-    // show cached if exists
-    const cached = localStorage.getItem('fc_user');
-    if (cached) {
-      const u = JSON.parse(cached);
-      statusEl.textContent = 'Connected (cached) ✅';
-      outEl.hidden = false;
-      outEl.textContent = JSON.stringify({ fid: u.fid, username: u.username }, null, 2);
-    }
+    // Tombol manual
+    document.getElementById('connect').onclick = async () => {
+      try { const sdk = await loadSdk(); await doSignIn(sdk); }
+      catch (e) { statusEl.innerHTML = 'SDK error <span class="err">✖</span>'; log(e?.message || String(e)); }
+    };
+
+    // Auto-prompt jika benar2 di Mini App
+    (async () => {
+      // tampilkan info awal
+      log({ ua, inIframe, isWarpcastUA, url: location.href });
+
+      // cache
+      const cached = localStorage.getItem('fc_user');
+      if (cached) {
+        const u = JSON.parse(cached);
+        statusEl.innerHTML = 'Connected (cached) <span class="ok">✅</span>';
+        log({ cached: u, env: { isWarpcastUA, inIframe } });
+      }
+
+      if (!isWarpcastUA || !inIframe) {
+        statusEl.innerHTML = 'Not in Warpcast <span class="err">✖</span>';
+        log('Halaman ini harus dibuka dari tombol "Open FID Checker" di Warpcast, bukan dari Chrome.');
+        return;
+      }
+
+      // auto connect
+      if (auto && document.visibilityState === 'visible') {
+        try {
+          const sdk = await loadSdk();
+          // beri jeda kecil agar webview siap
+          setTimeout(() => doSignIn(sdk), 150);
+        } catch (e) {
+          statusEl.innerHTML = 'SDK load error <span class="err">✖</span>';
+          log(e?.message || String(e));
+        }
+      }
+    })();
   </script>
 </body>
 </html>
