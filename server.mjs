@@ -1,119 +1,135 @@
-import express from "express";
-import dotenv from "dotenv";
-import fetch from "node-fetch";
+import 'dotenv/config';
+import express from 'express';
+import path from 'path';
+import fetch from 'node-fetch';
 
-dotenv.config();
 const app = express();
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '1mb' }));
 
-// 🏠 Root page — untuk preview & link Open in Warpcast
-app.get("/", (req, res) => {
-  const base = process.env.BASE_URL;
-  res.send(`
-    <html>
-      <head>
-        <meta property="og:title" content="FID Checker" />
-        <meta property="og:description" content="Check your Farcaster FID instantly" />
-        <meta property="og:image" content="${base}/public/icon-1024.png" />
-        <meta property="fc:frame" content="vNext" />
-        <meta property="fc:frame:image" content="${base}/public/icon-1024.png" />
-        <meta property="fc:frame:button:1" content="Check my FID" />
-        <meta property="fc:frame:post_url" content="${base}/api/check" />
-        <meta property="fc:miniapp" content="${base}/app/" />
-        <style>
-          body { background:#0b0b14; color:white; font-family:sans-serif; text-align:center; padding-top:60px }
-          a.btn { color:#fff; background:#6b46c1; padding:12px 24px; border-radius:8px; text-decoration:none }
-        </style>
-      </head>
-      <body>
-        <h1>FID Checker is live 🚀</h1>
-        <p>Cast this URL in Warpcast to see the Mini App.</p>
-        <a class="btn" href="https://warpcast.com/~/compose?text=${encodeURIComponent(base)}">Open in Warpcast</a>
-      </body>
-    </html>
-  `);
+// static
+const PUB = path.join(process.cwd(), 'public');
+app.use('/public', express.static(PUB));
+app.use('/app', express.static(path.join(PUB, 'app')));
+app.get('/og.png', (_, res) => res.sendFile(path.join(PUB, 'og.png')));
+app.get('/icon-1024.png', (_, res) => res.sendFile(path.join(PUB, 'icon-1024.png')));
+
+const PORT = process.env.PORT || 3000;
+const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`;
+const NEYNAR_API_KEY = process.env.NEYNAR_API_KEY || '';
+
+// ── Root: preview + tombol open miniapp (/app/?autoconnect=1)
+app.get('/', (req, res) => {
+  res.set('content-type', 'text/html').send(`<!doctype html><html><head>
+<meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>FID Checker</title>
+<meta property="og:title" content="FID Checker"/><meta property="og:image" content="${BASE_URL}/og.png"/>
+
+<meta name="fc:miniapp" content='{
+  "version":"1",
+  "imageUrl":"${BASE_URL}/og.png",
+  "button":{
+    "title":"Open FID Checker",
+    "action":{
+      "type":"launch_miniapp",
+      "url":"${BASE_URL}/app/?autoconnect=1",
+      "name":"FID Checker",
+      "splashImageUrl":"${BASE_URL}/icon-1024.png",
+      "splashBackgroundColor":"#0b0b14"
+    }
+  }
+}'/>
+
+<meta property="fc:frame" content="vNext"/>
+<meta property="fc:frame:image" content="${BASE_URL}/og.png"/>
+<meta property="fc:frame:button:1" content="Check my FID"/>
+<meta property="fc:frame:post_url" content="${BASE_URL}/api/check"/>
+
+<style>
+:root{color-scheme:dark light}
+body{margin:0;min-height:100svh;display:grid;place-items:center;background:#0b0b14;color:#e5e7eb;font:16px/1.6 system-ui}
+.card{background:#111827;border:1px solid #232535;border-radius:16px;padding:22px 24px;max-width:560px}
+a{color:#a78bfa;text-decoration:none}a:hover{text-decoration:underline}
+</style></head><body>
+<div class="card">
+  <h1>FID Checker is live 🚀</h1>
+  <p>Cast this link in Warpcast to see Frame/Mini App buttons.</p>
+  <p><a href="${BASE_URL}/app/?autoconnect=1">open mini app</a> ·
+     <a href="${BASE_URL}/.well-known/farcaster.json">manifest</a> ·
+     <a href="${BASE_URL}/api/card?fid=123&handle=abja666">sample card</a></p>
+</div>
+</body></html>`);
 });
 
-// 📱 Mini App — auto connect saat dibuka di Warpcast
-app.get("/app", (req, res) => {
-  const base = process.env.BASE_URL;
-  res.send(`
-    <html>
-      <head>
-        <title>FID Checker</title>
-        <script src="https://cdn.jsdelivr.net/npm/@neynar/farcaster-js"></script>
-        <style>
-          body { background:#0b0b14; color:#fff; font-family:sans-serif; text-align:center; padding-top:80px }
-          .card { background:#111; display:inline-block; padding:24px; border-radius:16px }
-          button { background:#6b46c1; color:white; border:none; padding:12px 24px; border-radius:8px; cursor:pointer }
-        </style>
-      </head>
-      <body>
-        <div class="card">
-          <h2>Connecting to Farcaster...</h2>
-          <p>Harap tunggu sebentar, sedang memproses koneksi.</p>
-        </div>
-
-        <script type="module">
-          import { NeynarFrameSDK } from "https://cdn.jsdelivr.net/npm/@neynar/farcaster-js@latest/+esm";
-          const sdk = new NeynarFrameSDK({ apiKey: "${process.env.NEYNAR_API_KEY}" });
-
-          try {
-            const user = await sdk.actions.signIn(); // langsung minta izin connect
-            document.body.innerHTML = \`
-              <div class="card">
-                <h2>Welcome!</h2>
-                <p>Your FID: <b>\${user.fid}</b></p>
-                <p>Username: @\${user.username}</p>
-              </div>\`;
-          } catch (err) {
-            document.body.innerHTML = \`
-              <div class="card">
-                <h2>Connection failed</h2>
-                <p>\${err.message}</p>
-              </div>\`;
-          }
-        </script>
-      </body>
-    </html>
-  `);
-});
-
-// ✅ API — validate frame klik dari Warpcast
-app.post("/api/check", async (req, res) => {
+// Frame action → validate via Neynar → return image+buttons
+app.post('/api/check', async (req, res) => {
   try {
-    const { trustedData } = req.body;
-    const result = await fetch("https://api.neynar.com/v2/farcaster/frame/validate", {
-      method: "POST",
-      headers: {
-        accept: "application/json",
-        "api_key": process.env.NEYNAR_API_KEY,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({ message_bytes_in_hex: trustedData.messageBytes }),
-    });
-    const data = await result.json();
+    const msgHex = req.body?.trustedData?.messageBytes;
+    let fid = req.body?.untrustedData?.fid ?? null;
+    let handle = null;
+    let valid = true;
 
-    const fid = data?.action?.interactor?.fid;
-    const username = data?.action?.interactor?.username;
-    const base = process.env.BASE_URL;
+    if (NEYNAR_API_KEY && msgHex) {
+      const r = await fetch('https://api.neynar.com/v2/farcaster/frame/validate', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'api_key': NEYNAR_API_KEY },
+        body: JSON.stringify({ message_bytes_in_hex: msgHex })
+      });
+      const j = await r.json();
+      valid = !!j?.valid;
+      fid = j?.action?.user?.fid ?? fid;
+      handle = j?.action?.user?.username ?? null;
+    }
 
-    return res.json({
+    if (!valid || !fid) {
+      return res.status(200).json({
+        frame: {
+          version: 'vNext',
+          image: `${BASE_URL}/og.png`,
+          buttons: [{ label: NEYNAR_API_KEY ? 'Invalid, Retry' : 'Dev mode: no API key' }],
+          postUrl: `${BASE_URL}/api/check`
+        }
+      });
+    }
+
+    const img = `${BASE_URL}/api/card?fid=${encodeURIComponent(fid)}&handle=${encodeURIComponent(handle || '')}`;
+    return res.status(200).json({
       frame: {
-        version: "vNext",
-        image: `${base}/public/icon-1024.png`,
-        post_url: `${base}/api/check`,
+        version: 'vNext',
+        image: img,
         buttons: [
           { label: `FID: ${fid}` },
-          { label: `@${username}` },
+          { label: handle ? `@${handle}` : 'No handle' }
         ],
-      },
+        postUrl: `${BASE_URL}/api/check`
+      }
     });
-  } catch (err) {
-    console.error(err);
-    res.status(500).send("Error validating frame");
+  } catch (e) {
+    console.error(e);
+    return res.status(200).json({
+      frame: { version: 'vNext', image: `${BASE_URL}/og.png`, buttons: [{ label: 'Error, Retry' }], postUrl: `${BASE_URL}/api/check` }
+    });
   }
 });
 
-app.listen(3000, () => console.log("FID Checker running..."));
+// Dynamic SVG for the frame
+app.get('/api/card', (req, res) => {
+  const fid = req.query.fid || '0';
+  const handle = req.query.handle || '';
+  const svg = `
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b0b14"/><stop offset="1" stop-color="#1a1d2b"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#g)"/>
+  <text x="600" y="190" font-size="56" fill="#c7d2fe" text-anchor="middle" font-family="Verdana">Farcaster FID Checker</text>
+  <text x="600" y="360" font-size="96" fill="#ffffff" text-anchor="middle" font-family="Verdana">FID #${fid}</text>
+  <text x="600" y="470" font-size="48" fill="#a5b4fc" text-anchor="middle" font-family="Verdana">${handle ? '@'+handle : ''}</text>
+</svg>`;
+  res.set('content-type', 'image/svg+xml').send(svg);
+});
+
+// Export for Vercel; local dev fallback
+export default app;
+if (!process.env.VERCEL) app.listen(PORT, () => console.log(`Local dev → ${BASE_URL}`));
