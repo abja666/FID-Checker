@@ -1,0 +1,11 @@
+{
+  "miniapp": {
+    "version": "1",
+    "name": "FID Checker",
+    "homeUrl": "https://YOUR-APP.vercel.app/app/",
+    "iconUrl": "https://YOUR-APP.vercel.app/public/icon-1024.png",
+    "splashImageUrl": "https://YOUR-APP.vercel.app/public/icon-1024.png",
+    "splashBackgroundColor": "#0b0b14",
+    "requiredCapabilities": ["actions.signIn"]
+  }
+}
