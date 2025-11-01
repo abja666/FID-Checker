@@ -2,7 +2,7 @@
   "miniapp": {
     "version": "1",
     "name": "FID Checker",
-    "homeUrl": "https://fid-checker.vercel.app/",
+    "homeUrl": "https://fid-checker.vercel.app/app/",
     "iconUrl": "https://fid-checker.vercel.app/icon-1024.png",
     "splashImageUrl": "https://fid-checker.vercel.app/og.png",
     "splashBackgroundColor": "#0b0b14",
